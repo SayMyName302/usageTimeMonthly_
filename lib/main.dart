@@ -10,7 +10,7 @@ void main() async {
     join(await getDatabasesPath(), 'timer_database.db'),
     onCreate: (db, version) {
       return db.execute(
-          'CREATE TABLE timer(id INTEGER PRIMARY KEY, seconds_elapsed INTEGER)');
+          'CREATE TABLE timer(id INTEGER PRIMARY KEY,date TEXT, seconds_elapsed INTEGER)');
     },
     version: 1,
   );

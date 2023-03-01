@@ -16,6 +16,7 @@ class TimerApp extends StatefulWidget {
 class _TimerAppState extends State<TimerApp> with WidgetsBindingObserver {
   late Timer _timer;
   int _secondsElapsed = 0;
+  late DateTime _startDate;
 
   Database get database => widget.database;
 
@@ -37,7 +38,7 @@ class _TimerAppState extends State<TimerApp> with WidgetsBindingObserver {
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
-        _secondsElapsed++;
+        _secondsElapsed = DateTime.now().difference(_startDate).inSeconds;
         _updateSecondsElapsed(_secondsElapsed);
       });
     });
@@ -48,39 +49,50 @@ class _TimerAppState extends State<TimerApp> with WidgetsBindingObserver {
   }
 
   Future<void> _getSecondsElapsed() async {
-    final List<Map<String, dynamic>> maps = await database.query('timer');
-    if (maps.isNotEmpty) {
-      setState(() {
-        _secondsElapsed = maps.first['seconds_elapsed'] as int;
-      });
+    final List<Map<String, dynamic>> rows = await database.query('timer', orderBy: 'id DESC', limit: 1);
+    if (rows.isNotEmpty) {
+      final Map<String, dynamic> row = rows.first;
+      _startDate = DateTime.parse(row['date']);
+      final DateTime currentDate = DateTime.now();
+      if (currentDate.year != _startDate.year || currentDate.month != _startDate.month || currentDate.day != _startDate.day) {
+        await _insertNewRow(currentDate);
+      } else {
+        _secondsElapsed = row['seconds_elapsed'] as int;
+      }
+    } else {
+      await _insertNewRow(DateTime.now());
     }
+     final List<Map<String, dynamic>> maps = await database.query('timer');
+  if (maps.isNotEmpty) {
+    setState(() {
+      _secondsElapsed = 0;
+    });
   }
+  print('All rows in timer table:');
+  print(maps);
+}
+  
 
   Future<void> _updateSecondsElapsed(int secondsElapsed) async {
-    // Ensure that the database is created
-    await database.transaction((txn) async {
-      await txn.execute(
-        'CREATE TABLE IF NOT EXISTS timer(id INTEGER PRIMARY KEY, seconds_elapsed INTEGER)',
-      );
-    });
-
-    // Check if there is an existing row in the database
-    final count = Sqflite.firstIntValue(
-      await database.rawQuery('SELECT COUNT(*) FROM timer'),
+    await database.update(
+      'timer',
+      {
+        'seconds_elapsed': secondsElapsed,
+      },
+      where: 'id = (SELECT MAX(id) FROM timer)',
     );
+  }
 
-    if (count == 0) {
-      // If there is no existing row, insert the initial value of the timer
-      await database.insert('timer', {'id': 1, 'seconds_elapsed': secondsElapsed});
-    } else {
-      // Otherwise, update the existing row with the new value of the timer
-      await database.update(
-        'timer',
-        {'seconds_elapsed': secondsElapsed},
-        where: 'id = ?',
-        whereArgs: [1],
-      );
-    }
+  Future<void> _insertNewRow(DateTime date) async {
+    _startDate = date;
+    await database.insert(
+      'timer',
+      {
+        'date': _startDate.toIso8601String(),
+        'seconds_elapsed': 0,
+      },
+    );
+    _secondsElapsed = 0;
   }
 
   String getTimerString() {
@@ -95,8 +107,6 @@ class _TimerAppState extends State<TimerApp> with WidgetsBindingObserver {
     return '$hourString$minuteString$secondString';
   }
 
-
-  
 
   @override
   Widget build(BuildContext context) {
